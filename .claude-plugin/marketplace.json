@@ -1,0 +1,15 @@
+{
+  "name": "moth-quantum-skills",
+  "description": "Agent skills for building with the Moth Quantum engine API.",
+  "owner": {
+    "name": "maxkyliu",
+    "url": "https://github.com/maxkyliu"
+  },
+  "plugins": [
+    {
+      "name": "moth-quantum",
+      "description": "Run Moth Quantum engines from code: live-docs-first workflow, a dependency-free client, an engine map, recipes and private-engine guidance",
+      "source": "./"
+    }
+  ]
+}

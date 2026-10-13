@@ -1,0 +1,12 @@
+{
+  "name": "moth-quantum",
+  "version": "0.1.0",
+  "description": "Agent skill for building with the Moth Quantum engine API: run quantum engines, upload assets, chain jobs, and register private engines.",
+  "homepage": "https://docs.mothquantum.com",
+  "license": "MIT",
+  "author": {
+    "name": "maxkyliu",
+    "url": "https://github.com/maxkyliu"
+  },
+  "repository": "https://github.com/maxkyliu/moth-quantum-skills"
+}
