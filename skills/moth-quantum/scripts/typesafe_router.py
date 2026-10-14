@@ -131,7 +131,7 @@ def main() -> None:
     plan = plan_from_answers(judge(state, build_questions()),
                              len(args.image), args.mask is not None)
     files = slot_files(plan, args.image, args.mask) if plan.engine else {}
-    finish(plan, files, run=args.run, yes=args.yes, out=args.out)
+    finish(plan, files, run=args.run, yes=args.yes, out=args.out, request=args.request)
 
 
 if __name__ == "__main__":

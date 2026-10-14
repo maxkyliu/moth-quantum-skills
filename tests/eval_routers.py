@@ -17,6 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skills/moth-quantum/scripts"))
 import typesafe_music_router as music  # noqa: E402
+import typesafe_refine as refine  # noqa: E402
 import typesafe_router as image  # noqa: E402
 from typesafe_core import judge  # noqa: E402
 
@@ -57,6 +58,53 @@ MUSIC_CASES = [
      {"emit": ("==", "map")}),
     ("tell me a joke", {}, None, {}),
 ]
+
+
+# Refine: feedback on the echo run → expected changes ("up" / "down" / a value) and whether
+# the measured IR is reused. Any other changed setting fails the case.
+LAST_ECHO = {"engine": "retrocausal-echo-v1",
+             "params": {"theta_x": 1.98, "negative_mode": "reverse", "bpm": 96.0},
+             "inputs": {"audio": "audio-asset"}, "job_id": "job-1",
+             "outputs": {"result": "wav", "ir": "ir-asset", "taps": "taps"}}
+REFINE_CASES = [
+    ("less backwards, more of the dry voice", {"mix": "down", "negative_mode": "invert"}, True),
+    ("make the echoes stranger", {"theta_x": "up"}, False),
+    ("longer tails and let them keep repeating", {"feedback": "up", "decay": "up"}, True),
+    ("narrower, almost mono", {"stereo_width": "down"}, True),
+    ("swirly phasey echoes instead", {"negative_mode": "phase", "theta_z": "up"}, False),
+    ("sounds great, thanks", {}, None),
+    # phrasings not used while wording the questions
+    ("can you pull the echoes back a bit", {"mix": "down"}, True),
+    ("collapse it to the centre", {"stereo_width": "down"}, True),
+    ("tighter, the echoes die out too slowly", {"decay": "down"}, True),
+    ("tame the chaos, make it more predictable", {"theta_x": "down"}, False),
+    ("more repeats please", {"feedback": "up"}, True),
+    ("play the echoes forwards again", {"negative_mode": "invert"}, True),
+]
+
+
+def run_refine() -> tuple[int, float]:
+    passed, seconds = 0, 0.0
+    for feedback, want, reuse in REFINE_CASES:
+        started = time.monotonic()
+        answers = judge({"feedback": feedback}, refine.build_questions(LAST_ECHO["engine"]))
+        seconds += time.monotonic() - started
+        plan, files, changes = refine.plan_refinement(answers, LAST_ECHO)
+        problems = [f"changed {sorted(set(changes) - set(want))}"] if set(changes) - set(want) else []
+        for param, rule in want.items():
+            if param not in changes:
+                problems.append(f"{param} unchanged")
+                continue
+            old, new = changes[param]
+            ok = {"up": new > old, "down": new < old}.get(rule, new == rule)
+            if not ok:
+                problems.append(f"{param} {old}->{new}, wanted {rule}")
+        if reuse is not None and ("ir" in files) != reuse:
+            problems.append(f"reuses IR: {'ir' in files}, wanted {reuse}")
+        passed += not problems
+        mark = "PASS" if not problems else "FAIL"
+        print(f"  {mark}  conf {plan.confidence:.2f}  {feedback[:58]:<58}  {'; '.join(problems)}")
+    return passed, seconds
 
 
 def _value(plan, key):
@@ -112,9 +160,12 @@ def main() -> None:
                      lambda a, i: music.plan_from_answers(
                          a, has_midi=bool(i.get("midi")), has_audio=bool(i.get("audio")),
                          bpm=i.get("bpm")), "music")
-    total = len(IMAGE_CASES) + len(MUSIC_CASES)
-    print(f"\n{ip + mp}/{total} passed · image {ip}/{len(IMAGE_CASES)} · music "
-          f"{mp}/{len(MUSIC_CASES)} · {(its + mts) / total:.1f} s per request")
+    print("refine (echo feedback)")
+    rp, rts = run_refine()
+    total = len(IMAGE_CASES) + len(MUSIC_CASES) + len(REFINE_CASES)
+    print(f"\n{ip + mp + rp}/{total} passed · image {ip}/{len(IMAGE_CASES)} · music "
+          f"{mp}/{len(MUSIC_CASES)} · refine {rp}/{len(REFINE_CASES)} · "
+          f"{(its + mts + rts) / total:.1f} s per request")
 
 
 if __name__ == "__main__":

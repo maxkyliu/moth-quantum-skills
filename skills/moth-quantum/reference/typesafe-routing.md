@@ -133,7 +133,9 @@ How it imitates a System One judgment:
 3. `confidence` = 1 − normalised entropy of that distribution, multiplied by *coverage* (the
    share of probability the model put on valid labels at all). TypeSafe computes its own
    confidence differently, so thresholds do not transfer.
-4. Questions run in parallel (`JUDGE_CONCURRENCY`, default 4).
+4. Questions run in parallel (`JUDGE_CONCURRENCY`, default 4). llama.cpp batches parallel
+   requests, which shifts probabilities slightly between runs; set `JUDGE_CONCURRENCY=1` for
+   identical answers every time (about 3× slower).
 
 ```bash
 export JUDGE=local                              # default when TYPESAFE_API_KEY is unset
@@ -167,6 +169,52 @@ Local probabilities are flatter than Jev's: correct plans scored 0.15–1.00 (me
 with the MoE model. At the default `CONFIRM_BELOW=0.6`, about half of the correct plans would
 stop for confirmation. Lower it through the environment once your own evaluation shows where
 wrong plans start; the 18 cases above contain no wrong plans, so they cannot set it.
+
+## Refining a result from feedback
+
+[scripts/typesafe_refine.py](../scripts/typesafe_refine.py) changes the last run instead of
+starting over: "less backwards, more of the dry voice", "narrower, almost mono".
+
+```bash
+python scripts/typesafe_music_router.py "eerie backwards echoes on the beat" --audio vox.wav --bpm 96 --run
+python scripts/typesafe_refine.py "narrower, almost mono"          # plan only
+python scripts/typesafe_refine.py "narrower, almost mono" --run    # submit
+```
+
+Every `--run` (routers and refine) appends the run to `<out>/session.json`: engine, params,
+input asset ids, job id and output asset ids. Job records from the API do not include params or
+inputs, so the session file is the only memory. Refine reads its last entry.
+
+**Dials.** Each supported engine lists the settings feedback can move (`DIALS` in the script):
+echo `mix`, character (`theta_x`), repeats (`feedback`), tail (`decay`), `stereo_width`,
+`negative_mode`; `blur-midi-v1` strength, reach, cleanup (`threshold`); `qrc-*` variation;
+`qrc-audio-v1` crossfade; `blur-v1` and `telablur-v1` strength. For each dial the judge answers:
+
+| Question | Type | Notes |
+| --- | --- | --- |
+| Does the feedback ask to change it? | Noul | names both concrete ends ("narrower, closer to mono" or "wider stereo") plus casual phrasings |
+| Which way? | Choice `lower` / `higher` | each end in plain words, never "more/less of X" |
+| How much? | Score: a little / a lot | one or two steps from the current value, clamped to the schema |
+| Which option? (choice dials) | Choice | e.g. `invert` / `reverse` / `phase` |
+
+The judge sees **only the feedback**. Changes are relative, and code applies them to the current
+values; when the state also listed every setting's current value, the local model picked wrong
+directions ("almost mono" → wider).
+
+**Measurement reuse.** For `retrocausal-echo-v1`, a change that touches only playback settings
+passes the previous run's IR asset, so the echo pattern stays identical and no new quantum
+measurement runs. Changing `character`, or switching to `phase` (which adds `theta_z = 0.79`),
+measures again, and the plan asks for confirmation. The credit price per job is the same either
+way; reuse saves measurement time and keeps everything you didn't mention unchanged.
+
+**Confidence** counts the yes/no and direction answers of the dials it changes plus every
+dial's yes/no. "A little versus a lot" is left out: a wrong guess is one step off and the next
+refine corrects it.
+
+Results on this machine (Qwen3.6-35B-A3B-MTP, `JUDGE_CONCURRENCY=1`, 2026-10-14): 11/12 refine
+cases pass, 5/6 on phrasings not used for wording. The miss: "can you pull the echoes back a bit"
+lowered `mix` as expected but also shortened the tail. A real refine run ("narrower, almost
+mono") changed only `stereo_width` 1.0 → 0.64 and reused the measured IR (`ir_source: supplied`).
 
 ## Adapting it to other engine families
 

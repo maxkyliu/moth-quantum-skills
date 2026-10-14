@@ -220,7 +220,7 @@ def main() -> None:
                              has_midi=bool(args.midi), has_audio=bool(args.audio),
                              length=args.length, bpm=args.bpm, mask=mask)
     files = slot_files(plan, args.midi, args.audio) if plan.engine else {}
-    finish(plan, files, run=args.run, yes=args.yes, out=args.out)
+    finish(plan, files, run=args.run, yes=args.yes, out=args.out, request=args.request)
 
 
 if __name__ == "__main__":

@@ -27,9 +27,12 @@ MAX_RETRIES = 5
 BACKOFF_SECONDS = 2
 
 
-def ask(question: str) -> str:
-    """Point a question at the user's words, held in state.request."""
-    return f"{question} Judge from the user's request in `request`."
+SESSION_FILE = "session.json"
+
+
+def ask(question: str, field: str = "request") -> str:
+    """Point a question at the user's words, held in state[field]."""
+    return f"{question} Judge from the user's words in `{field}`."
 
 
 def ask_typesafe(state: dict, questions: dict) -> dict:
@@ -135,25 +138,59 @@ class Reader:
         return round(min(self.used), 2) if self.used else 0.0
 
 
+def _as_asset(value: str) -> str:
+    """Upload a local path; pass asset ids and job:<id>/<slot> references through."""
+    if value.startswith("job:") or moth.ASSET_ID.fullmatch(value):
+        return value
+    return moth.upload(Path(value))
+
+
 def run_plan(plan: Plan, files: dict[str, str], out: Path) -> dict:
-    """Upload files, show the live cost, submit, wait and download."""
+    """Upload files, show the live cost, submit, wait and download.
+
+    Returns the run record that `--refine` builds on: engine, params, input assets,
+    job id, output assets and the result."""
     definition = moth.engine(plan.engine)
     print(f"{plan.engine}: {definition.get('credits_per_run')} credit(s) per run", file=sys.stderr)
-    uploaded = {slot: moth.upload(Path(path)) for slot, path in files.items()}
-    job_id = moth.submit(plan.engine, plan.params, uploaded or None)
+    inputs = {slot: moth.resolve_ref(_as_asset(value)) for slot, value in files.items()}
+    job_id = moth.submit(plan.engine, plan.params, inputs or None)
     status = moth.wait(job_id)
     if status["status"] != "completed":
         raise RuntimeError(json.dumps(status))
-    return moth.result(job_id, out)
+    result = moth.result(job_id, out)
+    outputs = {o["slot"]: o["output_asset_id"] for o in result.get("outputs") or []}
+    return {"engine": plan.engine, "params": plan.params, "inputs": inputs, "job_id": job_id,
+            "outputs": outputs, "result": result}
 
 
-def finish(plan: Plan, files: dict[str, str], *, run: bool, yes: bool, out: str) -> None:
+def save_session(out: Path, record: dict, request: str | None) -> Path:
+    """Append a run to out/session.json; the last entry is what --refine starts from."""
+    path = out / SESSION_FILE
+    history = load_session(path)["history"] if path.exists() else []
+    entry = {k: record[k] for k in ("engine", "params", "inputs", "job_id", "outputs")}
+    path.write_text(json.dumps({"history": [*history, {**entry, "request": request}]},
+                               indent=2, ensure_ascii=False))
+    return path
+
+
+def load_session(path: Path) -> dict:
+    data = json.loads(path.read_text())
+    if not data.get("history"):
+        raise ValueError(f"{path} has no runs")
+    return data
+
+
+def finish(plan: Plan, files: dict[str, str], *, run: bool, yes: bool, out: str,
+           request: str | None = None, extra: dict | None = None) -> None:
     """Print the plan; run it only when asked, complete, and confirmed if needed."""
-    print(json.dumps(plan.report(), indent=2))
+    print(json.dumps({**plan.report(), **(extra or {})}, indent=2, ensure_ascii=False))
     if not run or plan.engine is None:
         return
     if plan.missing_slots:
         sys.exit(f"missing input file(s): {', '.join(plan.missing_slots)}")
     if plan.needs_confirmation and not yes:
         sys.exit("plan needs confirmation: review it, then rerun with --yes")
-    print(json.dumps(run_plan(plan, files, Path(out)), indent=2, ensure_ascii=False))
+    record = run_plan(plan, files, Path(out))
+    session = save_session(Path(out), record, request)
+    print(json.dumps(record["result"], indent=2, ensure_ascii=False))
+    print(f"saved run to {session}; refine it with typesafe_refine.py", file=sys.stderr)

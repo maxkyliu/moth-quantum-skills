@@ -32,12 +32,33 @@ def test_submit_wraps_params_and_input_files(monkeypatch):
     calls = []
     monkeypatch.setattr(moth, "_http", fake_http([(202, {"job_id": "j1", "status": "queued"})], calls))
 
-    job_id = moth.submit("qrc-gen-v2", {"length": 30}, {"state": "job:t1/state"})
+    job_id = moth.submit("qrc-gen-v2", {"length": 30}, {"state": "c573a1b2-asset"})
 
     assert job_id == "j1"
     assert calls[0]["url"] == f"{moth.API}/engines/qrc-gen-v2/process"
-    assert calls[0]["body"] == {"params": {"length": 30}, "input_files": {"state": "job:t1/state"}}
+    assert calls[0]["body"] == {"params": {"length": 30}, "input_files": {"state": "c573a1b2-asset"}}
     assert calls[0]["headers"]["Authorization"] == "Bearer moth_test"
+
+
+def test_submit_resolves_job_references_to_output_assets(monkeypatch):
+    calls = []
+    job = {"job_id": "t1", "outputs": [{"slot": "state", "output_asset_id": "asset-9"}]}
+    monkeypatch.setattr(moth, "_http", fake_http([(200, job), (202, {"job_id": "j2"})], calls))
+
+    moth.submit("qrc-gen-v2", {}, {"state": "job:t1/state"})
+
+    assert calls[0]["url"] == f"{moth.API}/jobs/t1"
+    assert calls[1]["body"]["input_files"] == {"state": "asset-9"}
+
+
+def test_resolve_ref_reports_missing_slot(monkeypatch):
+    job = {"job_id": "t1", "outputs": [{"slot": "result", "output_asset_id": "a"}]}
+    monkeypatch.setattr(moth, "_http", fake_http([(200, job)], []))
+
+    with pytest.raises(moth.MothError, match="no output slot 'ir'"):
+        moth.resolve_ref("job:t1/ir")
+    with pytest.raises(ValueError):
+        moth.resolve_ref("job:t1")
 
 
 def test_call_raises_problem_details_on_422(monkeypatch):

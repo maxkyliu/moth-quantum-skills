@@ -49,14 +49,17 @@ its exact field names and slot names. If live access fails, say so and fall back
 
 ```
 POST /engines/{engine_id}/process
-{"params": {...}, "input_files": {"<slot>": "<asset_id | job:<job_id>/<slot>>"}}
+{"params": {...}, "input_files": {"<slot>": "<asset_id>"}}
 ```
 
 - Everything the schema defines goes **inside `params`**. Schemas set
   `additionalProperties: false`: a top-level or misspelled field is rejected.
 - Files go in **`input_files`**, keyed by the engine's slot name, never in `params`.
-  A previous job's output chains in as `job:<job_id>/<slot>` (e.g. `qrc-gen-v2`'s
-  `state`, `retrocausal-echo-v1`'s `ir`, `qdrive-api-v1`'s `circuit`).
+  To chain a previous job's output (e.g. `qrc-gen-v2`'s `state`, `retrocausal-echo-v1`'s
+  `ir`), pass its `output_asset_id` from `GET /jobs/{id}`. The API accepts **only asset
+  UUIDs** here, even where an engine page shows `job:<job_id>/<slot>` (tested 2026-10-14:
+  `422 must be an asset UUID`). The helper's `submit()` and `--file` accept
+  `job:<job_id>/<slot>` and resolve it to the asset id for you.
 - Submit returns `202 {"job_id", "status": "queued"}`. Nothing has run yet.
 - Status moves `queued → processing → completed`, or ends `failed` / `cancelled`.
   Those three are terminal. Treat unknown states (e.g. `fetching`) as processing.
@@ -141,7 +144,8 @@ before spending credits when the least certain judgment is low.
 `scripts/typesafe_router.py` (image engines) and `scripts/typesafe_music_router.py`
 (MIDI and audio engines) implement it. Without a TypeSafe key they run on a local or cloud
 LLM through `scripts/local_judge.py` (`JUDGE=local`, default endpoint: llama-swap on
-`localhost:8080`).
+`localhost:8080`). `scripts/typesafe_refine.py` then adjusts the last run from feedback
+("narrower, almost mono"), reusing its measured IR when only playback settings change.
 
 ## Private engines
 

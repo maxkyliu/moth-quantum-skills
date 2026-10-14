@@ -66,7 +66,10 @@ for mode in ("invert", "reverse"):
     result(job, Path(f"out/{mode}"))
 ```
 
-With `ir` supplied, the echo params are ignored and no new measurement is paid for.
+`submit()` resolves `job:{first}/ir` to the IR's asset id (the API itself accepts only asset
+ids). With `ir` supplied, playback settings (`mix`, `negative_mode`, `bpm`, `division`…) apply
+but measurement settings (`theta_x`, `theta_z`, `depth`…) are ignored, and no new measurement is
+paid for. See the table in [engines.md](engines.md#midi-and-audio).
 Use `emit: "map"` to get only the tap map for a DAW or plug-in.
 
 ## Simulator, noisy simulator, real hardware

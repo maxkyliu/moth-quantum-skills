@@ -98,10 +98,34 @@ def upload(path: Path, content_type: str | None = None) -> str:
     return asset["asset_id"]
 
 
+def output_asset(job_id: str, slot: str) -> str:
+    """The asset id of a finished job's output slot (how outputs chain into later jobs)."""
+    outputs = call("GET", f"/jobs/{job_id}").get("outputs") or []
+    for out in outputs:
+        if out.get("slot") == slot:
+            return out["output_asset_id"]
+    raise MothError(404, {"detail": f"job {job_id} has no output slot {slot!r}",
+                          "slots": [o.get("slot") for o in outputs]})
+
+
+def resolve_ref(value: str) -> str:
+    """Turn `job:<job_id>/<slot>` into that output's asset id; pass anything else through.
+
+    The API accepts only asset UUIDs in input_files, even where an engine page shows the
+    `job:` form (verified 2026-10-14 on retrocausal-echo-v1 and qrc-gen-v2).
+    """
+    if not value.startswith("job:"):
+        return value
+    job_id, sep, slot = value[len("job:"):].partition("/")
+    if not sep or not job_id or not slot:
+        raise ValueError(f"expected job:<job_id>/<slot>, got {value!r}")
+    return output_asset(job_id, slot)
+
+
 def submit(engine_id: str, params: dict | None = None, input_files: dict | None = None) -> str:
     payload: dict = {"params": params or {}}
     if input_files:
-        payload["input_files"] = input_files
+        payload["input_files"] = {slot: resolve_ref(v) for slot, v in input_files.items()}
     return call("POST", f"/engines/{engine_id}/process", payload)["job_id"]
 
 

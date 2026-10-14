@@ -30,8 +30,18 @@ Masks: black keeps the original, white takes the full effect, grey blends. Witho
 | `retrocausal-echo-v1` Retrocausal Echo | 2 | `audio`, `ir` → `result`, `ir`, `taps` | `theta_x ≈ 0.94` ("how quantum": low = regular taps, high = inverted/erased); `theta_zz ≈ 1.10`; `depth = 8`; `n_sites = 8` (stereo positions); `master_ms = 640` or `bpm` + `division`; `mix = 0.6`; `feedback = 0`; `decay = 0.9`; `negative_mode = invert` (`reverse`, `phase` with `theta_z > 0`); `emit = audio` (`map` = tap map only) |
 
 `retrocausal-echo-v1` sums stereo input to mono. Without `audio` it renders its own impulse
-response (`ir_seconds = 3`). Feed its `ir` output back as `input_files.ir` to remix without
-paying for the measurement again.
+response (`ir_seconds = 3`). Pass its `ir` output's asset id back as `input_files.ir` to
+re-render without paying for a new measurement. Tested 2026-10-14 with a saved IR:
+
+| | Still applies (playback) | Ignored (measurement, kept from the IR) |
+| --- | --- | --- |
+| Tested | `mix`, `negative_mode`, `bpm`, `division` | `theta_x`, `theta_z`, `depth` |
+| Inferred (listed under `tap_map` vs `spec` in `taps.json`) | `master_ms`, `decay`, `feedback`, `feedback_source`, `stereo_width`, `diffusion_ms`, `grain_ms` | `theta_zz`, `n_sites`, `kick`, `kick_site`, `disorder`, `seed`, `lattice` |
+
+`negative_mode: "phase"` needs an IR measured with `theta_z > 0`; on an IR with `theta_z = 0`
+it falls back to `invert` with a `phase_mode_without_phase` warning. Each job's `taps` output
+records `provenance.ir_source` (`measured` or `supplied`), the measurement in `extras.spec`
+and the playback settings in `extras.tap_map`.
 
 ## Sequences
 
@@ -40,7 +50,8 @@ paying for the measurement again.
 | `qrc-train-v2` QRC Train | 5 | none → `state` | `sequence` (tokens: ints, strings…); `num_qubits = 5` (2–12); `epochs = 50`; `sample_length = 15`; `washout = 5` (< sample_length); `mixing = 0.7`; `shots = 3000`; `vocabulary`; `seed` |
 | `qrc-gen-v2` QRC Generate | 1 | `state` (req) → `state` | `length = 10`; `variation = 1` (temperature); `initial_events`; `random_seed`; `vocabulary` (same size swap) |
 
-The trained `state` must go in `input_files.state` (`job:<train_job_id>/state`), not in `params`.
+The trained `state` must go in `input_files.state` as the training job's `state` output asset id
+(the helper resolves `job:<train_job_id>/state` to it), not in `params`.
 
 ## Quantum tools
 
