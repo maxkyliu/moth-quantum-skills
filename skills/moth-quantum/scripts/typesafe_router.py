@@ -9,7 +9,8 @@ certain judgment it used is below CONFIRM_BELOW. Standard library only.
     python typesafe_router.py "make it dreamy but keep the face sharp" --image photo.png
     python typesafe_router.py "..." --image photo.png --mask face.png --run
 
-Needs TYPESAFE_API_KEY (and MOTH_API_KEY for --run). Music: typesafe_music_router.py.
+Judge: TypeSafe (TYPESAFE_API_KEY) or a local LLM (JUDGE=local, see local_judge.py).
+MOTH_API_KEY is needed for --run. Music: typesafe_music_router.py.
 """
 from __future__ import annotations
 
@@ -18,15 +19,18 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from typesafe_core import Plan, Reader, ask, ask_typesafe, finish  # noqa: E402
+from typesafe_core import Plan, Reader, ask, finish, judge  # noqa: E402
 
 ENGINES = {
-    "blur-v1": "A soft, dreamy, hazy or ghostly blur of one image, possibly only in part of it",
+    "blur-v1": "Blur one image: a soft, dreamy, hazy or ghostly quantum blur, possibly only "
+               "in part of it",
     "telablur-v1": "Morph, blend or melt one image into a second image",
-    "deep-fryer-v1": "A loud, over-saturated, blown-out, 'deep-fried' meme look",
+    "deep-fryer-v1": "Deep fry an image: a loud, over-saturated, blown-out meme look, "
+                     "at any intensity",
     "tessa-image-v1": "Send the colours through a quantum encode-and-measure round trip, "
                       "for glitchy colour shifts or to see quantum noise",
-    "none": "Not a request for an image effect, or none of the effects above fit",
+    "none": "The request is not about changing an image at all, for example an unrelated "
+            "question",
 }
 STRENGTH_LEVELS = ["barely noticeable", "subtle", "clearly visible", "strong",
                    "as strong as possible"]
@@ -50,8 +54,9 @@ def build_questions() -> dict:
         "reach": {"type": "score", "instructions": ask(
             "How far across the picture should the effect spread?"), "criteria": REACH_LEVELS},
         "reach?": {"type": "noul", "instructions": ask(
-            "Does the user say whether the effect should stay soft and local or scatter "
-            "across the whole picture?")},
+            "Setting aside which region of the image changes, does the user describe how far "
+            "the smearing itself should travel, such as a gentle local haze versus detail "
+            "scattered across the entire picture?")},
         "direction": {"type": "choice", "instructions": ask(
             "In which direction should one image melt into the other?"),
             "criteria": {"full": "in every direction", "vertical": "up and down only",
@@ -64,7 +69,8 @@ def build_questions() -> dict:
         "noisy": {"type": "noul", "instructions": ask(
             "Does the user want to see the noise or imperfections of real quantum hardware?")},
         "real_hardware": {"type": "noul", "instructions": ask(
-            "Does the user explicitly ask to run on a real quantum computer?")},
+            "Does the user explicitly ask for the job itself to run on a real quantum computer? "
+            "Wanting to see or imitate hardware noise is not enough.")},
     }
 
 
@@ -122,7 +128,7 @@ def main() -> None:
     args = p.parse_args()
 
     state = {"request": args.request, "attached_images": len(args.image)}
-    plan = plan_from_answers(ask_typesafe(state, build_questions()),
+    plan = plan_from_answers(judge(state, build_questions()),
                              len(args.image), args.mask is not None)
     files = slot_files(plan, args.image, args.mask) if plan.engine else {}
     finish(plan, files, run=args.run, yes=args.yes, out=args.out)

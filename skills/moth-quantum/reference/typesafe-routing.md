@@ -8,7 +8,9 @@ is one the engine's schema accepts.
 
 Two runnable routers share [scripts/typesafe_core.py](../scripts/typesafe_core.py) (the
 TypeSafe call, the `Plan`, and a `Reader` that tracks how certain each used answer was).
-Both use the standard library only and need `TYPESAFE_API_KEY`, plus `MOTH_API_KEY` for `--run`.
+Both use the standard library only. The judge is TypeSafe (`TYPESAFE_API_KEY`) or a local or
+cloud LLM (see [Without TypeSafe](#without-typesafe-a-local-or-cloud-llm-judge)); `--run` also
+needs `MOTH_API_KEY`.
 
 | Router | Engines |
 | --- | --- |
@@ -114,6 +116,57 @@ Other music rules:
 `retrocausal-echo-v1` without audio is valid (it renders its own impulse response), so the
 router asks for confirmation rather than refusing. The `qrc-*` engines cost 5 credits; `--run`
 prints the live cost before submitting.
+
+## Without TypeSafe: a local or cloud LLM judge
+
+[scripts/local_judge.py](../scripts/local_judge.py) answers the same questions with any
+OpenAI-compatible endpoint that returns `top_logprobs` (llama.cpp / llama-swap, vLLM, hosted
+APIs), and returns answers in TypeSafe's shape, so the routers do not change.
+
+How it imitates a System One judgment:
+
+1. Each question becomes a prompt whose answers are one-token labels: `A`, `B`, `C`… for a
+   Choice, `0`–`9` for Score levels, `Y` / `N` for a Noul. The state goes in the system message,
+   identical for every question, so the server reuses its prompt cache.
+2. The model is asked for exactly one token (`max_tokens: 1`, thinking off). The probabilities
+   it gives the labels become the distribution; a Score's value is the probability-weighted level.
+3. `confidence` = 1 − normalised entropy of that distribution, multiplied by *coverage* (the
+   share of probability the model put on valid labels at all). TypeSafe computes its own
+   confidence differently, so thresholds do not transfer.
+4. Questions run in parallel (`JUDGE_CONCURRENCY`, default 4).
+
+```bash
+export JUDGE=local                              # default when TYPESAFE_API_KEY is unset
+export JUDGE_BASE_URL=http://localhost:8080/v1  # default: llama-swap on this machine
+export JUDGE_MODEL=Qwen3.6-35B-A3B-MTP          # default: the first model the server lists
+export CONFIRM_BELOW=0.4                        # see "Tuning" below
+python scripts/typesafe_router.py "make it dreamy but keep the face sharp" --image photo.png
+```
+
+For a hosted API, set `JUDGE_BASE_URL`, `JUDGE_API_KEY` and `JUDGE_MODEL` to a model that
+returns logprobs. Reasoning models that hide logprobs cannot be used. llama.cpp's
+`chat_template_kwargs` (to turn thinking off) is only sent to localhost endpoints.
+
+### Results on this machine (2026-10-13)
+
+`tests/eval_routers.py` runs 18 labelled requests (9 image, 9 music) through both routers:
+
+| Judge | Passed | Time per request | Notes |
+| --- | --- | --- | --- |
+| Qwen3.6-35B-A3B-MTP (MoE), llama-swap | 18/18 | 2.9 s | 15/18 before three questions were reworded |
+| Qwen3.8-27B (dense), llama-swap | 15/18 | 7.5 s | Too cautious on "did the user mention X?" Nouls, so stated settings were dropped |
+
+The wording was tuned on this same set, so expect lower accuracy on new requests: add your own
+cases to `eval_routers.py` before relying on it. The three rewordings (a narrower `none`
+option, the effect's everyday name in each engine description, and "wants real hardware" kept
+apart from "wants to see hardware noise") make the questions clearer for any judge, Jev included.
+
+### Tuning the threshold
+
+Local probabilities are flatter than Jev's: correct plans scored 0.15–1.00 (median about 0.6)
+with the MoE model. At the default `CONFIRM_BELOW=0.6`, about half of the correct plans would
+stop for confirmation. Lower it through the environment once your own evaluation shows where
+wrong plans start; the 18 cases above contain no wrong plans, so they cannot set it.
 
 ## Adapting it to other engine families
 

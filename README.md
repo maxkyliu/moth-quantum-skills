@@ -19,6 +19,7 @@ skills/moth-quantum/
   scripts/typesafe_core.py         shared TypeSafe call, Plan and Reader for the routers
   scripts/typesafe_router.py       plain-language request → image engine call, via TypeSafe
   scripts/typesafe_music_router.py plain-language request → MIDI / audio engine call
+  scripts/local_judge.py           TypeSafe-compatible judge on a local or cloud LLM (logprobs)
   reference/engines.md             catalog snapshot with main parameters
   reference/recipes.md             multi-step flows (masks, sweeps, train/generate, echo remix)
   reference/private-engines.md     registering and testing your own engine
@@ -26,6 +27,8 @@ skills/moth-quantum/
 tests/test_moth.py                 offline unit tests for the client
 tests/test_router.py               offline unit tests for the image router
 tests/test_music_router.py         offline unit tests for the music router
+tests/test_local_judge.py          offline unit tests for the local judge
+tests/eval_routers.py              labelled evaluation against a live judge (manual)
 ```
 
 ## Install

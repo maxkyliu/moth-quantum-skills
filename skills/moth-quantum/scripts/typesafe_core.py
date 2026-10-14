@@ -1,8 +1,9 @@
-"""Shared pieces for routing plain-language requests to Moth engines with TypeSafe.
+"""Shared pieces for routing plain-language requests to Moth engines with typed judgments.
 
-A router builds every question for every engine, sends them in one TypeSafe request,
-then reads only the chosen engine's answers through a `Reader`, which remembers how
-certain each judgment it used was. Standard library only.
+A router builds every question for every engine, sends them in one request, then reads
+only the chosen engine's answers through a `Reader`, which remembers how certain each
+judgment it used was. The judge is TypeSafe's System One API, or a local / cloud LLM via
+local_judge.py (JUDGE=local). Standard library only.
 """
 from __future__ import annotations
 
@@ -19,7 +20,8 @@ import moth  # noqa: E402
 TYPESAFE_URL = "https://api.typesafe.ai/v1/systemone"
 TYPESAFE_MODEL = "jev-latest"
 # Example threshold: evaluate it on your own requests before relying on it.
-CONFIRM_BELOW = 0.6
+# A local LLM's probabilities are less sharp than Jev's, so it may need a lower value.
+CONFIRM_BELOW = float(os.environ.get("CONFIRM_BELOW", "0.6"))
 STATED = 0.5          # a "did the user say anything about X?" Noul above this uses X's answer
 MAX_RETRIES = 5
 BACKOFF_SECONDS = 2
@@ -46,6 +48,21 @@ def ask_typesafe(state: dict, questions: dict) -> dict:
             raise RuntimeError(f"TypeSafe HTTP {status}: {raw[:500].decode(errors='replace')}")
         return json.loads(raw)["answers"]
     raise RuntimeError("TypeSafe retries exhausted")
+
+
+def judge(state: dict, questions: dict) -> dict:
+    """Answer the questions with TypeSafe or a local LLM, per JUDGE (default: TypeSafe if
+    TYPESAFE_API_KEY is set, otherwise the OpenAI-compatible endpoint in JUDGE_BASE_URL)."""
+    backend = os.environ.get("JUDGE") or ("typesafe" if os.environ.get("TYPESAFE_API_KEY")
+                                          else "local")
+    if backend == "typesafe":
+        return ask_typesafe(state, questions)
+    if backend != "local":
+        sys.exit(f"JUDGE must be 'typesafe' or 'local', got {backend!r}")
+    from local_judge import LocalJudge
+    local = LocalJudge()
+    print(f"judge: {local.model} at {local.base_url}", file=sys.stderr)
+    return local.system_one(state, questions)
 
 
 @dataclass(frozen=True)

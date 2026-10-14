@@ -11,7 +11,8 @@ flags rather than from the model.
     python typesafe_music_router.py "remix this loop into 32 loose pieces" --audio loop.wav \
         --length 32 --run
 
-Needs TYPESAFE_API_KEY (and MOTH_API_KEY for --run).
+Judge: TypeSafe (TYPESAFE_API_KEY) or a local LLM (JUDGE=local, see local_judge.py).
+MOTH_API_KEY is needed for --run.
 """
 from __future__ import annotations
 
@@ -20,16 +21,17 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from typesafe_core import Plan, Reader, ask, ask_typesafe, finish  # noqa: E402
+from typesafe_core import Plan, Reader, ask, finish, judge  # noqa: E402
 
 ENGINES = {
-    "blur-midi-v1": "Smear the notes of a MIDI file so they bleed into neighbouring pitches "
-                    "and moments, adding jazzy passing notes and harmony",
+    "blur-midi-v1": "Blur the notes of a MIDI file or one of its tracks: notes bleed into "
+                    "neighbouring pitches and moments, adding jazzy passing notes",
     "qrc-midi-v1": "Learn a MIDI melody and generate a new melody or variation in its style",
     "retrocausal-echo-v1": "Add an echo, delay or reverb-like repeats to an audio recording",
     "qrc-audio-v1": "Cut an audio recording into pieces and rearrange or remix them "
                     "into a new arrangement",
-    "none": "Not a request to change or generate music, or none of the effects above fit",
+    "none": "The request is not about changing or generating music at all, for example an "
+            "unrelated question",
 }
 STRENGTH_LEVELS = ["barely noticeable", "subtle", "clearly audible", "strong",
                    "as strong as possible"]
@@ -98,7 +100,8 @@ def build_questions() -> dict:
         "partial": {"type": "noul", "instructions": ask(
             "Does the user want only part of the piece changed, such as one track or section?")},
         "real_hardware": {"type": "noul", "instructions": ask(
-            "Does the user explicitly ask to run on a real quantum computer?")},
+            "Does the user explicitly ask for the job itself to run on a real quantum computer? "
+            "Wanting to see or imitate hardware noise is not enough.")},
     }
 
 
@@ -213,7 +216,7 @@ def main() -> None:
     state = {"request": args.request,
              "attached": {"midi": bool(args.midi), "audio": bool(args.audio)}}
     mask = [parse_section(s) for s in args.section] or None
-    plan = plan_from_answers(ask_typesafe(state, build_questions()),
+    plan = plan_from_answers(judge(state, build_questions()),
                              has_midi=bool(args.midi), has_audio=bool(args.audio),
                              length=args.length, bpm=args.bpm, mask=mask)
     files = slot_files(plan, args.midi, args.audio) if plan.engine else {}

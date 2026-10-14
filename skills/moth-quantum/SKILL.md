@@ -139,7 +139,9 @@ schema's own values, keep engine defaults for anything the user didn't mention, 
 before spending credits when the least certain judgment is low.
 [reference/typesafe-routing.md](reference/typesafe-routing.md) shows this with TypeSafe and
 `scripts/typesafe_router.py` (image engines) and `scripts/typesafe_music_router.py`
-(MIDI and audio engines) implement it.
+(MIDI and audio engines) implement it. Without a TypeSafe key they run on a local or cloud
+LLM through `scripts/local_judge.py` (`JUDGE=local`, default endpoint: llama-swap on
+`localhost:8080`).
 
 ## Private engines
 
