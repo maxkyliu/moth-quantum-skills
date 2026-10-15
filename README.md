@@ -22,18 +22,20 @@ skills/moth-quantum/
   scripts/local_judge.py           TypeSafe-compatible judge on a local or cloud LLM (logprobs)
   scripts/typesafe_refine.py       adjust the last run from plain-language feedback
   scripts/yue2_harmony.py          quantum-blur a YuE2 song's chord progression, melody untouched
+  scripts/yue2_chip_noise.py       recolour those chords with real IBM chip noise (qpixl-v1)
   scripts/midi_io.py               standard-library MIDI read/write
   reference/engines.md             catalog snapshot with main parameters
   reference/recipes.md             multi-step flows (masks, sweeps, train/generate, echo remix)
   reference/private-engines.md     registering and testing your own engine
   reference/typesafe-routing.md    routing design, confidence policy, adapting to other engines
-  reference/yue2-harmony.md        YuE2 harmony bridge: method, strength results, GB10 setup
+  reference/yue2-harmony.md        YuE2 harmony bridge: method, results, chip noise, GB10 setup
 tests/test_moth.py                 offline unit tests for the client
 tests/test_router.py               offline unit tests for the image router
 tests/test_music_router.py         offline unit tests for the music router
 tests/test_local_judge.py          offline unit tests for the local judge
 tests/test_refine.py               offline unit tests for refine and session saving
 tests/test_yue2_harmony.py         offline tests for MIDI I/O and chord naming (needs YUE2_DIR)
+tests/test_yue2_chip_noise.py      offline tests for chip-noise encoding and apply (needs YUE2_DIR)
 tests/eval_routers.py              labelled evaluation against a live judge (manual)
 ```
 

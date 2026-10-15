@@ -153,7 +153,8 @@ YuE2 writes an editable ABC score before rendering a song. `scripts/yue2_harmony
 that score's chord progression with `blur-midi-v1` and writes back new chord symbols in the
 song's key, leaving the melody untouched. Use `--change 25%` (after a 0.5-strength blur) to
 change a fixed share of chords, gentle same-root recolourings first; raw strength changes far more
-chords on dense seventh-chord songs than on simple ones. See [reference/yue2-harmony.md](reference/yue2-harmony.md).
+chords on dense seventh-chord songs than on simple ones. `scripts/yue2_chip_noise.py` does the
+same with the noise of a real IBM chip (`qpixl-v1`, `mode: qpu`): fewer, scattered changes. See [reference/yue2-harmony.md](reference/yue2-harmony.md).
 
 ## Private engines
 

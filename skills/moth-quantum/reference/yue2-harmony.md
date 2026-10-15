@@ -97,6 +97,41 @@ drift add noise.
 Round trips without blur return all three YuE2 example scores byte-identical. These results
 are symbolic; whether a progression sounds better needs a YuE2 render and listening.
 
+## Chip noise from real hardware (`yue2_chip_noise.py`)
+
+`blur-midi-v1` has no hardware option. `qpixl-v1` does: it loads a list of numbers into qubits
+and reads them back, simulated (`aer`, or `fake_<chip>` with a real chip's calibrated noise) or
+on an IBM chip. Each chord is sent as 12 pitch-class strengths (root 1.0, other tones 0.5,
+absent 0); what comes back feeds the change dial instead of a blurred MIDI.
+
+```bash
+python scripts/yue2_chip_noise.py values score.abc values.json
+python scripts/yue2_chip_noise.py run values.json sim.json --mode emu --machine fake_fez   # 1 credit
+python scripts/yue2_chip_noise.py run values.json chip.json --mode qpu --backend ibm_fez   # 1 credit
+python scripts/yue2_chip_noise.py apply score.abc values.json chip.json out-25.abc --change 25%
+```
+
+A `fake_fez` job holds at most 448 values (37 chords); larger jobs fail with
+`insufficient_qubits`. `values` therefore sends every chord when it fits and otherwise each
+distinct chord once, so repeats of a chord share the same noise (`--encoding` overrides).
+`run` waits up to 5 hours for the hardware queue.
+
+Tested 2026-10-15 on `ibm_fez` (3 QPU seconds per job):
+
+| | root (sent 1.0) | tone (0.5) | absent (0) |
+| --- | --- | --- | --- |
+| `fake_fez` | 0.81 | 0.50 | 0.17 (max 0.52) |
+| `ibm_fez` | 0.79 | 0.51 | 0.22 (max 0.86) |
+
+| Song, `--change 25%` | Simulated `fake_fez` | Real `ibm_fez` |
+| --- | --- | --- |
+| City Lights (21 chords, one per occurrence) | 4: F → Fmaj7/F6, Am → Asus2 | 3: C → Cmaj7, C → Fmaj7, Am → Asus2 |
+| Sukie (128 chords, 31 distinct) | 18 | 30: Bm7 → Bm6 ×14, C#m → C#m7 ×5, … |
+
+The noise suggests far fewer changes than a 0.5 blur (never more than about a fifth of the
+chords), and they fall where the noise happens to land rather than where the harmony pulls.
+Real-chip and simulated runs pick different chords: each run's noise is new.
+
 ## Running YuE2 on an NVIDIA GB10 (aarch64)
 
 Tested 2026-10-14: install `torch==2.10.0` from `https://download.pytorch.org/whl/cu130`
