@@ -43,6 +43,34 @@ weights out-of-key notes at 0.2 and only accepts new chords that fit the score's
 original chord is always allowed), so blur moves harmony between related chords of the key.
 `--palette chromatic` keeps the raw result.
 
+## The change dial (`--change`)
+
+`strength` does not mean the same amount on every song: at 0.5 it changed 57% of City Lights'
+simple triads but 81% of Sukie's dense seventh chords. `--change 25%` instead fixes the share:
+
+```bash
+python scripts/yue2_harmony.py blur score.abc out.abc --params '{"strength": 0.5}' --change 25%
+python scripts/yue2_harmony.py apply score.abc blurred.mid out-10.abc --change 10%   # reuse a blur
+```
+
+1. Blur once at a high strength (0.5).
+2. For each chord, take the best alternative the blur suggests and its advantage: its fit minus
+   the original chord's fit, both measured on the unweighted blurred notes (the key palette only
+   decides which alternatives are allowed; down-weighted notes made intact out-of-key chords such
+   as Caug in A major look wrong).
+3. Eligible: chords whose alternative fits better (advantage > 0). Rank all recolourings that keep
+   the root (F → Fmaj7) before any substitution with a new root (Am → Fmaj7); within each group, the
+   largest advantage first. A mild penalty for new roots was not enough on dense harmony.
+4. Apply the top `round(share × chords)`; fewer if fewer are eligible.
+
+The ranking does not depend on the share, so 25% contains every 10% change plus more. One blur
+(1 credit) gives any number of settings.
+
+| Song | 10% | 25% | 50% |
+| --- | --- | --- | --- |
+| City Lights (21 chords) | 2: C → Cmaj7 | 5: + F → Fmaj7 | 10: + Csus4, first root change Fmaj7 → Em |
+| Sukie (128 chords) | 13, all same-root | 32, all same-root | – |
+
 ## Results (City Lights, YuE2's generated score, C major, 21 chords, 2026-10-14)
 
 | `strength` | Chords changed | What changed |

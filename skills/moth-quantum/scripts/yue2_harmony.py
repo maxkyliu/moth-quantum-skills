@@ -137,16 +137,11 @@ def bass_pitch_class(by_pitch: dict) -> int:
     return min(p for p, w in by_pitch.items() if w >= BASS_FLOOR * strongest) % 12
 
 
-def name_chord(weights: list[float], by_pitch: dict, original: str, flats: bool,
-               scale: set[int] | None = None, new_slashes: bool = False) -> str:
-    """The YuE2 chord whose tones best match the weights; slash bass if the bass is strong.
-
-    With a `scale`, notes outside it count for less and new chords must fit the scale
-    (the original chord is always allowed), so blur moves harmony between chords of the key.
-    """
-    if not any(weights):
-        return original
-    old_root, old_quality, old_bass = parse_symbol(original)
+def _candidates(weights: list[float], original: str,
+                scale: set[int] | None) -> list[tuple[float, int, str]]:
+    """(fit, root, quality) for every allowed chord: cosine with the weights, a small bonus for
+    the original root and a small cost per extra tone. No preference for the original chord."""
+    old_root, old_quality, _ = parse_symbol(original)
     if scale is not None:
         weights = [w if pc in scale else w * OUT_OF_KEY for pc, w in enumerate(weights)]
 
@@ -154,12 +149,14 @@ def name_chord(weights: list[float], by_pitch: dict, original: str, flats: bool,
         tones = {(r + i) % 12 for i in INTERVALS[q]}
         return scale is None or tones <= scale or (r, q) == (old_root, old_quality)
 
-    best = max(((_cosine(weights, {(r + i) % 12 for i in iv})
-                 + (KEEP_ROOT_BONUS if r == old_root else 0)
-                 + (KEEP_MARGIN if (r, q) == (old_root, old_quality) else 0)
-                 - EXTRA_TONE_COST * (len(iv) - 3), r, q)
-                for r in range(12) for q, iv in INTERVALS.items() if allowed(r, q)))
-    _, root, quality = best
+    return [(_cosine(weights, {(r + i) % 12 for i in iv})
+             + (KEEP_ROOT_BONUS if r == old_root else 0)
+             - EXTRA_TONE_COST * (len(iv) - 3), r, q)
+            for r in range(12) for q, iv in INTERVALS.items() if allowed(r, q)]
+
+
+def _spell(root: int, quality: str, by_pitch: dict, original: str, flats: bool,
+           scale: set[int] | None, new_slashes: bool) -> str:
     names = FLATS if flats else SHARPS
     symbol = names[root] + quality
     bass = bass_pitch_class(by_pitch)
@@ -167,15 +164,74 @@ def name_chord(weights: list[float], by_pitch: dict, original: str, flats: bool,
     # YuE2 mostly ignores slash basses (tested 2026-10-14), and blur leaks the bass to its
     # neighbours, so a slash is kept only where the original had the same bass, unless asked.
     if bass != root and bass in tones and (scale is None or bass in scale) and (
-            new_slashes or bass == old_bass):
+            new_slashes or bass == parse_symbol(original)[2]):
         symbol += "/" + names[bass]
     return symbol
+
+
+def name_chord(weights: list[float], by_pitch: dict, original: str, flats: bool,
+               scale: set[int] | None = None, new_slashes: bool = False) -> str:
+    """The YuE2 chord whose tones best match the weights; slash bass if the bass is strong.
+
+    With a `scale`, notes outside it count for less and new chords must fit the scale
+    (the original chord is always allowed), so blur moves harmony between chords of the key.
+    The original chord stays unless another fits better by KEEP_MARGIN.
+    """
+    if not any(weights):
+        return original
+    old_root, old_quality, _ = parse_symbol(original)
+    _, root, quality = max((fit + (KEEP_MARGIN if (r, q) == (old_root, old_quality) else 0), r, q)
+                           for fit, r, q in _candidates(weights, original, scale))
+    return _spell(root, quality, by_pitch, original, flats, scale, new_slashes)
+
+
+@dataclass(frozen=True)
+class Suggestion:
+    """The blur's best alternative to one chord, and how strongly it wants the change."""
+    symbol: str
+    advantage: float        # fit of the alternative minus fit of the original chord
+    new_root: bool          # Am → Fmaj7 (substitution) rather than F → Fmaj7 (recolouring)
+
+
+def suggest(weights: list[float], by_pitch: dict, original: str, flats: bool,
+            scale: set[int] | None = None, new_slashes: bool = False) -> Suggestion | None:
+    """The best chord other than the original, or None if nothing fits."""
+    if not any(weights):
+        return None
+    old_root, old_quality, _ = parse_symbol(original)
+    candidates = _candidates(weights, original, scale)
+    _, root, quality = max(c for c in candidates if (c[1], c[2]) != (old_root, old_quality))
+    # Measure the advantage on the unweighted notes: the key palette down-weights out-of-key
+    # notes, which made an intact out-of-key original (Caug in A major) look like a poor fit.
+    raw = {(r, q): fit for fit, r, q in _candidates(weights, original, None)}
+    advantage = raw[(root, quality)] - raw[(old_root, old_quality)]
+    return Suggestion(_spell(root, quality, by_pitch, original, flats, scale, new_slashes),
+                      round(advantage, 4), root != old_root)
 
 
 def rename(chords: list[Chord], notes: list[Note], flats: bool,
            scale: set[int] | None = None, new_slashes: bool = False) -> list[str]:
     return [name_chord(*window_weights(notes, float(c.onset), float(c.end)), c.symbol, flats,
                        scale, new_slashes) for c in chords]
+
+
+def rename_by_budget(chords: list[Chord], notes: list[Note], flats: bool, fraction: float,
+                     scale: set[int] | None = None, new_slashes: bool = False) -> list[str]:
+    """Change about `fraction` of the chords: every recolouring of the same root first, then
+    substitutions with a new root; within each group, the ones the blur wants most.
+
+    Only chords whose best alternative fits better than the original are eligible, so the
+    result can fall short of the target. The ranking does not depend on the fraction, so a
+    larger budget only adds changes on top of a smaller one. (A mild penalty for new roots was
+    not enough: on dense seventh-chord songs a strong blur favoured substitutions by far.)"""
+    if not 0 <= fraction <= 1:
+        raise ValueError("change fraction must be between 0 and 1")
+    suggestions = [suggest(*window_weights(notes, float(c.onset), float(c.end)), c.symbol,
+                           flats, scale, new_slashes) for c in chords]
+    eligible = sorted((i for i, s in enumerate(suggestions) if s and s.advantage > 0),
+                      key=lambda i: (suggestions[i].new_root, -suggestions[i].advantage, i))
+    chosen = set(eligible[:round(fraction * len(chords))])
+    return [suggestions[i].symbol if i in chosen else c.symbol for i, c in enumerate(chords)]
 
 
 def replace_chords(text: str, score, symbols: list[str]) -> str:
@@ -190,17 +246,20 @@ def replace_chords(text: str, score, symbols: list[str]) -> str:
     return "\n".join(lines) + ("\n" if text.endswith("\n") else "")
 
 
-def edit_score(text: str, notes: list[Note], palette: str = "key",
-               new_slashes: bool = False) -> tuple[str, list]:
-    """Rename every chord from `notes`; verify melody, bars and tempo are untouched.
+def edit_score(text: str, notes: list[Note], palette: str = "key", new_slashes: bool = False,
+               change: float | None = None) -> tuple[str, list]:
+    """Rename chords from `notes`; verify melody, bars and tempo are untouched.
 
-    palette "key" keeps new chords inside the score's key; "chromatic" allows any chord."""
+    palette "key" keeps new chords inside the score's key; "chromatic" allows any chord.
+    With `change` (0..1), alter about that fraction of the chords, ranked by rename_by_budget;
+    without it, every chord whose best fit clearly beats the original changes."""
     score = abc_tools.parse_abc(text)
     chords = chord_timeline(score)
     key = score.voices["Vocal"].keys[0][1]
     flats = abc_tools.KEYS[key] < 0
     scale = key_scale(key) if palette == "key" else None
-    symbols = rename(chords, notes, flats, scale, new_slashes)
+    symbols = (rename(chords, notes, flats, scale, new_slashes) if change is None
+               else rename_by_budget(chords, notes, flats, change, scale, new_slashes))
     edited = replace_chords(text, score, symbols)
     check = abc_tools.compare(score, abc_tools.parse_abc(edited))
     if not check["match"]:
@@ -218,6 +277,14 @@ def blur_on_moth(midi: Path, params: dict, out_dir: Path) -> Path:
     result = moth.result(job, out_dir)
     name = next(o.get("filename") or o["slot"] for o in result["outputs"] if o["slot"] == "result")
     return out_dir / name
+
+
+def parse_fraction(text: str) -> float:
+    """'25%' or '0.25' → 0.25."""
+    value = float(text[:-1]) / 100 if text.endswith("%") else float(text)
+    if not 0 <= value <= 1:
+        raise argparse.ArgumentTypeError("use 0–100% or 0–1")
+    return value
 
 
 def main() -> None:
@@ -242,6 +309,9 @@ def main() -> None:
                         help="key: new chords stay in the score's key (default); chromatic: any")
         sp.add_argument("--slashes", action="store_true",
                         help="allow new slash basses (default: keep only the original ones)")
+        sp.add_argument("--change", type=parse_fraction, metavar="PERCENT",
+                        help="change about this share of the chords, e.g. 25%%: the ones the "
+                             "blur wants most, gentle recolourings first (needs a strong blur)")
     args = p.parse_args()
 
     text = Path(args.score).read_text()
@@ -265,10 +335,12 @@ def main() -> None:
     out = Path(args.out)
     if out.exists():
         sys.exit(f"{out} exists; choose a new file")
-    edited, changes = edit_score(text, read_midi(midi), args.palette, args.slashes)
+    edited, changes = edit_score(text, read_midi(midi), args.palette, args.slashes, args.change)
     out.write_text(edited)
     for old, new in changes:
         print(f"{old:>8} → {new}" + ("" if old != new else "   (unchanged)"))
+    changed = sum(old != new for old, new in changes)
+    print(f"{changed} of {len(changes)} chords changed", file=sys.stderr)
     print(f"wrote {out}; melody, bars and tempo verified unchanged", file=sys.stderr)
 
 

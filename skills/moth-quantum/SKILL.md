@@ -151,8 +151,9 @@ LLM through `scripts/local_judge.py` (`JUDGE=local`, default endpoint: llama-swa
 
 YuE2 writes an editable ABC score before rendering a song. `scripts/yue2_harmony.py` blurs
 that score's chord progression with `blur-midi-v1` and writes back new chord symbols in the
-song's key, leaving the melody untouched. Strength 0.3 recolours chords; 0.5 also substitutes
-related ones. See [reference/yue2-harmony.md](reference/yue2-harmony.md).
+song's key, leaving the melody untouched. Use `--change 25%` (after a 0.5-strength blur) to
+change a fixed share of chords, gentle same-root recolourings first; raw strength changes far more
+chords on dense seventh-chord songs than on simple ones. See [reference/yue2-harmony.md](reference/yue2-harmony.md).
 
 ## Private engines
 
