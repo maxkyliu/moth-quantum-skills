@@ -147,6 +147,13 @@ LLM through `scripts/local_judge.py` (`JUDGE=local`, default endpoint: llama-swa
 `localhost:8080`). `scripts/typesafe_refine.py` then adjusts the last run from feedback
 ("narrower, almost mono"), reusing its measured IR when only playback settings change.
 
+## Quantum harmony for YuE2 songs
+
+YuE2 writes an editable ABC score before rendering a song. `scripts/yue2_harmony.py` blurs
+that score's chord progression with `blur-midi-v1` and writes back new chord symbols in the
+song's key, leaving the melody untouched. Strength 0.3 recolours chords; 0.5 also substitutes
+related ones. See [reference/yue2-harmony.md](reference/yue2-harmony.md).
+
 ## Private engines
 
 To publish the user's own quantum program, register a definition with `POST /engines`
